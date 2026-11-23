@@ -1,0 +1,148 @@
+-- ============================================
+-- База данных: MasterPol
+-- Подсистема: работа с партнерами
+-- Стек: MS SQL Server + Entity Framework 6
+-- ============================================
+CREATE DATABASE MasterPol;
+GO
+USE MasterPol;
+GO
+
+-- Справочник типов партнеров
+CREATE TABLE PartnerTypes (
+    PartnerTypeId   INT          NOT NULL IDENTITY(1,1) PRIMARY KEY,
+    PartnerTypeName NVARCHAR(50) NOT NULL UNIQUE
+);
+GO
+
+-- Партнеры
+CREATE TABLE Partners (
+    PartnerId     INT           NOT NULL IDENTITY(1,1) PRIMARY KEY,
+    PartnerTypeId INT           NOT NULL,
+    PartnerName   NVARCHAR(100) NOT NULL,
+    DirectorName  NVARCHAR(150) NOT NULL,
+    Email         NVARCHAR(100) NOT NULL,
+    Phone         NVARCHAR(20)  NOT NULL,
+    LegalAddress  NVARCHAR(300) NOT NULL,
+    Inn           NVARCHAR(12)  NULL,
+    Rating        INT           NOT NULL CHECK (Rating >= 0),
+    CONSTRAINT FK_Partners_PartnerTypes FOREIGN KEY (PartnerTypeId) REFERENCES PartnerTypes(PartnerTypeId)
+);
+GO
+
+-- Типы продукции
+CREATE TABLE ProductTypes (
+    ProductTypeId   INT           NOT NULL IDENTITY(1,1) PRIMARY KEY,
+    ProductTypeName NVARCHAR(50)  NOT NULL UNIQUE,
+    Coefficient     DECIMAL(10,2) NOT NULL CHECK (Coefficient > 0)
+);
+GO
+
+-- Типы материалов
+CREATE TABLE MaterialTypes (
+    MaterialTypeId   INT          NOT NULL IDENTITY(1,1) PRIMARY KEY,
+    MaterialTypeName NVARCHAR(50) NOT NULL UNIQUE,
+    DefectPercent    DECIMAL(5,2) NOT NULL CHECK (DefectPercent >= 0 AND DefectPercent < 100)
+);
+GO
+
+-- Продукция
+CREATE TABLE Products (
+    ProductId       INT           NOT NULL IDENTITY(1,1) PRIMARY KEY,
+    Article         NVARCHAR(50)  NULL,
+    ProductTypeId   INT           NULL,
+    ProductName     NVARCHAR(300) NOT NULL UNIQUE,
+    MinPartnerPrice DECIMAL(10,2) NULL CHECK (MinPartnerPrice >= 0),
+    CONSTRAINT FK_Products_ProductTypes FOREIGN KEY (ProductTypeId) REFERENCES ProductTypes(ProductTypeId)
+);
+GO
+
+-- История реализации продукции партнером
+CREATE TABLE PartnerProducts (
+    PartnerProductId INT  NOT NULL IDENTITY(1,1) PRIMARY KEY,
+    PartnerId        INT  NOT NULL,
+    ProductId        INT  NOT NULL,
+    Quantity         INT  NOT NULL CHECK (Quantity > 0),
+    SaleDate         DATE NOT NULL,
+    CONSTRAINT FK_PartnerProducts_Partners FOREIGN KEY (PartnerId) REFERENCES Partners(PartnerId),
+    CONSTRAINT FK_PartnerProducts_Products FOREIGN KEY (ProductId) REFERENCES Products(ProductId)
+);
+GO
+
+-- ДАННЫЕ: Типы партнеров
+INSERT INTO PartnerTypes (PartnerTypeName) VALUES (N'ЗАО'), (N'ООО'), (N'ПАО'), (N'ОАО');
+GO
+
+-- ДАННЫЕ: Типы продукции
+INSERT INTO ProductTypes (ProductTypeName, Coefficient) VALUES
+(N'Ламинат', 2.35), (N'Массивная доска', 5.15), (N'Паркетная доска', 4.34), (N'Пробковое покрытие', 1.50);
+GO
+
+-- ДАННЫЕ: Типы материалов (процент брака как в исходном файле)
+INSERT INTO MaterialTypes (MaterialTypeName, DefectPercent) VALUES
+(N'Тип материала 1', 0.10), (N'Тип материала 2', 0.95), (N'Тип материала 3', 0.28),
+(N'Тип материала 4', 0.55), (N'Тип материала 5', 0.34);
+GO
+
+-- ДАННЫЕ: Партнеры (5 записей, дубли исходного файла убраны)
+INSERT INTO Partners (PartnerTypeId, PartnerName, DirectorName, Email, Phone, LegalAddress, Inn, Rating) VALUES
+(1, N'База Строитель', N'Иванова Александра Ивановна', N'aleksandraivanova@ml.ru', N'493 123 45 67',
+ N'652050, Кемеровская область, город Юрга, ул. Лесная, 15', N'2222455179', 7),
+(2, N'Паркет 29', N'Петров Василий Петрович', N'vppetrov@vl.ru', N'987 123 56 78',
+ N'164500, Архангельская область, город Северодвинск, ул. Строителей, 18', N'3333888520', 7),
+(3, N'Стройсервис', N'Соловьев Андрей Николаевич', N'ansolovev@st.ru', N'812 223 32 00',
+ N'188910, Ленинградская область, город Приморск, ул. Парковая, 21', N'4440391035', 7),
+(4, N'Ремонт и отделка', N'Воробьева Екатерина Валерьевна', N'ekaterina.vorobeva@ml.ru', N'444 222 33 11',
+ N'143960, Московская область, город Реутов, ул. Свободы, 51', N'1111520857', 5),
+(1, N'МонтажПро', N'Степанов Степан Сергеевич', N'stepanov@stepan.ru', N'912 888 33 33',
+ N'309500, Белгородская область, город Старый Оскол, ул. Рабочая, 122', N'5552431140', 10);
+GO
+
+-- ДАННЫЕ: Продукция (5 наименований из истории продаж)
+-- Article и MinPartnerPrice заполняются из Products_import.xlsx;
+-- у "Инженерная доска" тип в справочнике отсутствует -> NULL
+INSERT INTO Products (ProductName, ProductTypeId) VALUES
+(N'Паркетная доска Ясень темный однополосная 14 мм', 3),
+(N'Ламинат Дуб дымчато-белый 33 класс 12 мм', 1),
+(N'Ламинат Дуб серый 32 класс 8 мм с фаской', 1),
+(N'Инженерная доска Дуб Французская елка однополосная 12 мм', NULL),
+(N'Пробковое напольное клеевое покрытие 32 класс 4 мм', 4);
+GO
+
+-- ДАННЫЕ: История реализации (16 записей, даты M/D/YY переведены в ISO)
+-- Id партнера и продукции определяются по наименованиям, а не жестко заданными числами
+INSERT INTO PartnerProducts (PartnerId, ProductId, Quantity, SaleDate)
+SELECT p.PartnerId, pr.ProductId, v.Quantity, v.SaleDate
+FROM (VALUES
+    (N'База Строитель',   N'Паркетная доска Ясень темный однополосная 14 мм',        15500,  '2023-03-23'),
+    (N'База Строитель',   N'Ламинат Дуб дымчато-белый 33 класс 12 мм',               12350,  '2023-12-18'),
+    (N'База Строитель',   N'Ламинат Дуб серый 32 класс 8 мм с фаской',               37400,  '2024-06-07'),
+    (N'Паркет 29',        N'Инженерная доска Дуб Французская елка однополосная 12 мм', 35000, '2022-12-02'),
+    (N'Паркет 29',        N'Пробковое напольное клеевое покрытие 32 класс 4 мм',      1250,  '2023-05-17'),
+    (N'Паркет 29',        N'Ламинат Дуб дымчато-белый 33 класс 12 мм',                1000,  '2024-06-07'),
+    (N'Паркет 29',        N'Паркетная доска Ясень темный однополосная 14 мм',         7550,  '2024-07-01'),
+    (N'Стройсервис',      N'Паркетная доска Ясень темный однополосная 14 мм',         7250,  '2023-01-22'),
+    (N'Стройсервис',      N'Инженерная доска Дуб Французская елка однополосная 12 мм', 2500,  '2024-07-05'),
+    (N'Ремонт и отделка', N'Ламинат Дуб серый 32 класс 8 мм с фаской',               59050,  '2023-03-20'),
+    (N'Ремонт и отделка', N'Ламинат Дуб дымчато-белый 33 класс 12 мм',               37200,  '2024-03-12'),
+    (N'Ремонт и отделка', N'Пробковое напольное клеевое покрытие 32 класс 4 мм',      4500,  '2024-05-14'),
+    (N'МонтажПро',        N'Ламинат Дуб дымчато-белый 33 класс 12 мм',               50000,  '2023-09-19'),
+    (N'МонтажПро',        N'Ламинат Дуб серый 32 класс 8 мм с фаской',              670000,  '2023-11-10'),
+    (N'МонтажПро',        N'Паркетная доска Ясень темный однополосная 14 мм',        35000,  '2024-04-15'),
+    (N'МонтажПро',        N'Инженерная доска Дуб Французская елка однополосная 12 мм', 25000, '2024-06-12')
+) AS v(PartnerName, ProductName, Quantity, SaleDate)
+JOIN Partners p  ON p.PartnerName  = v.PartnerName
+JOIN Products pr ON pr.ProductName = v.ProductName;
+GO
+
+-- ПРОВЕРКА: скидки по партнерам (0/5/10/15%)
+SELECT p.PartnerName,
+       ISNULL(SUM(pp.Quantity), 0) AS TotalSold,
+       CASE WHEN ISNULL(SUM(pp.Quantity), 0) < 10000 THEN 0
+            WHEN SUM(pp.Quantity) < 50000            THEN 5
+            WHEN SUM(pp.Quantity) <= 300000          THEN 10
+            ELSE 15 END AS Discount
+FROM Partners p
+LEFT JOIN PartnerProducts pp ON pp.PartnerId = p.PartnerId
+GROUP BY p.PartnerName;
+GO
